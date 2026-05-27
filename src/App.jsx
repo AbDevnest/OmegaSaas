@@ -1,79 +1,105 @@
-import './App.css';
-import { lazy, Suspense } from "react";
+import "./App.css";
+import { useMemo, useState } from "react";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import AppContext from "./components/AppContext";
+import RequireAuth from "./components/RequireAuth";
+import RequireAdmin from "./components/RequireAdmin";
+import MainLayout from "./layout/MainLayout";
+import Dashboard from "./pages/Dashboard";
+import Analytics from "./pages/Analytics";
+import Product from "./pages/Product";
+import ProductDetail from "./pages/ProductDetail";
+import Login from "./pages/Login";
+import RoleHome from "./pages/RoleHome";
 
-import {
-  createBrowserRouter,
-  RouterProvider,
-} from "react-router-dom";
-
-// Layout
-import MainLayout from "./components/MainLayout";
-
-// Pages
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Analytics = lazy(() => import("./pages/Analytics"));
-const Product = lazy(() => import("./pages/Product"));
-const ProductDetail = lazy(() => import("./pages/ProductDetail"));
-
-const withSuspense = (component) => (
-  <Suspense
-    fallback={
-      <div className="p-6 text-sm text-slate-500">Loading...</div>
-    }
-  >
-    {component}
-  </Suspense>
-);
-
-// Router
 const router = createBrowserRouter([
   {
+    path: "/login",
+    element: <Login />,
+  },
+  {
     path: "/",
-    element: <MainLayout />,
-
+    element: (
+      <RequireAuth>
+        <MainLayout />
+      </RequireAuth>
+    ),
     children: [
-
-      // Dashboard
+      { path: "/", element: <RoleHome /> },
       {
-        path: "/",
-        element: withSuspense(<Dashboard />)
+        path: "/dashboard",
+        element: (
+          <RequireAdmin>
+            <Dashboard />
+          </RequireAdmin>
+        ),
       },
-
-      // Analytics
+      { path: "/products", element: <Product /> },
+      { path: "/products/:id", element: <ProductDetail /> },
       {
         path: "/analytics",
-        element: withSuspense(<Analytics />)
+        element: (
+          <RequireAdmin>
+            <Analytics />
+          </RequireAdmin>
+        ),
       },
-
-      // Products
-      {
-        path: "/products",
-        element: withSuspense(<Product />)
-      },
-
-      // Product Details
-      {
-        path: "/products/:id",
-        element: withSuspense(<ProductDetail />)
-      },
-
-      // 404 Page
       {
         path: "*",
         element: (
-          <h1 className="text-5xl text-center mt-20 text-red-500 font-bold">
+          <h1 className="mt-20 text-center text-4xl font-bold text-rose-500">
             404 Page Not Found
           </h1>
-        )
-      }
-
-    ]
-  }
+        ),
+      },
+    ],
+  },
 ]);
 
-// App Component
 export default function App() {
+  const [role, setRole] = useState(
+    () => localStorage.getItem("omega_role") || "",
+  );
+  const [publishedMap, setPublishedMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem("omega_published_map");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  function login(nextRole) {
+    localStorage.setItem("omega_role", nextRole);
+    setRole(nextRole);
+  }
+
+  function logout() {
+    localStorage.removeItem("omega_role");
+    setRole("");
+  }
+
+  function isPublished(productId) {
+    return publishedMap[String(productId)] !== false;
+  }
+
+  function togglePublished(productId) {
+    setPublishedMap((prev) => {
+      const key = String(productId);
+      const next = { ...prev, [key]: !(prev[key] !== false) };
+      localStorage.setItem("omega_published_map", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  const appState = useMemo(
+    () => ({ role, login, logout, isPublished, togglePublished }),
+    [role, publishedMap],
+  );
+
   return (
-    <RouterProvider router={router} />
+    <AppContext.Provider value={appState}>
+      <RouterProvider router={router} />
+    </AppContext.Provider>
   );
 }

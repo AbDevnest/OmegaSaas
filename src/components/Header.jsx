@@ -1,6 +1,12 @@
 import { MdMenu, MdNotificationsNone } from "react-icons/md";
 
-export default function Header({ title, subtitle, onToggleSidebar }) {
+export default function Header({
+  title,
+  subtitle,
+  onToggleSidebar,
+  role,
+  onLogout,
+}) {
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -28,10 +34,19 @@ export default function Header({ title, subtitle, onToggleSidebar }) {
 
           <div className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#f59e0b] font-semibold text-[#0f172a] text-xs">
-              A
+              {role === "admin" ? "A" : "U"}
             </span>
-            <p className="text-xs font-semibold text-slate-800">Admin</p>
+            <p className="text-xs font-semibold text-slate-800">
+              {role === "admin" ? "Admin" : "User"}
+            </p>
           </div>
+
+          <button
+            onClick={onLogout}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-[#f59e0b] hover:text-[#0f172a]"
+          >
+            Logout
+          </button>
         </div>
       </div>
     </header>

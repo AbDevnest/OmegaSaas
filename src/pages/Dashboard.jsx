@@ -1,61 +1,63 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { MdRefresh } from "react-icons/md";
-import { useProductsData } from "../hooks/useProductsData";
+import { FiPackage } from "react-icons/fi";
+import { BiCategory } from "react-icons/bi";
+import { FaStar } from "react-icons/fa";
+import { MdInventory2 } from "react-icons/md";
+import { getAllProducts } from "../api/dummyProductsApi";
 import { buildDashboardData } from "../utils/metrics";
 
+function getDonutGradient(ranges) {
+  const total = ranges.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return "conic-gradient(#e2e8f0 0deg 360deg)";
+
+  let current = 0;
+  const parts = ranges.map((item) => {
+    const angle = (item.value / total) * 360;
+    const start = current;
+    const end = current + angle;
+    current = end;
+    return `${item.color} ${start}deg ${end}deg`;
+  });
+
+  return `conic-gradient(${parts.join(",")})`;
+}
+
 export default function Dashboard() {
-  const { products, loading, error, refresh } = useProductsData();
-  const data = useMemo(() => buildDashboardData(products), [products]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const getViewportMode = () => {
-    if (typeof window === "undefined") return "desktop";
-    if (window.innerWidth < 640) return "mobile";
-    if (window.innerWidth < 1024) return "tablet";
-    return "desktop";
-  };
-
-  const [viewportMode, setViewportMode] = useState(getViewportMode);
+  async function loadData(force = false) {
+    try {
+      setLoading(true);
+      setError("");
+      const list = await getAllProducts(force);
+      setProducts(list);
+    } catch (err) {
+      setError(err.message || "Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const handleResize = () => setViewportMode(getViewportMode());
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    loadData();
   }, []);
 
-  const isMobile = viewportMode === "mobile";
-  const isTablet = viewportMode === "tablet";
-  const isCompact = isMobile || isTablet;
-  const categoryNameLimit = isMobile ? 9 : isTablet ? 11 : 14;
-
-  const categoryChartData = useMemo(
-    () =>
-      data.categories.map((item) => ({
-        ...item,
-        chartName: item.name.length > categoryNameLimit ? `${item.name.slice(0, categoryNameLimit)}...` : item.name,
-      })),
-    [data.categories, categoryNameLimit]
+  const data = buildDashboardData(products);
+  const maxCategoryCount = Math.max(
+    ...data.categories.map((item) => item.products),
+    1,
   );
+  const donutBackground = getDonutGradient(data.priceRanges);
 
-  const categoryChartHeight = isCompact
-    ? Math.max(360, categoryChartData.length * (isMobile ? 28 : 24))
-    : 340;
   const quickActions = [
-    { label: "📦 Browse All Products", to: "/products" },
-    { label: "📊 View Analytics", to: "/analytics" },
-    { label: "🌟 Top Rated", to: "/products?sort=top_rated" },
-    { label: "⚠️ Low Stock Alert", to: "/products?sort=low_stock" },
+    { label: "Browse All Products", to: "/products" },
+    { label: "View Analytics", to: "/analytics" },
+    { label: "Top Rated", to: "/products?sort=top_rated" },
+    { label: "Price Low to High", to: "/products?sort=price_low" },
   ];
 
   if (loading) {
@@ -74,16 +76,18 @@ export default function Dashboard() {
     );
   }
 
+  const STAT_ICONS = [
+    <FiPackage size={18} />,
+    <FaStar size={18} />,
+    <MdInventory2 size={18} />,
+    <BiCategory size={18} />,
+  ];
+
   return (
     <div className="space-y-6">
-      <section className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Overview</h2>
-          <p className="text-lg text-slate-400">Real-time product analytics</p>
-        </div>
-
+      <section className="text-end">
         <button
-          onClick={refresh}
+          onClick={() => loadData(true)}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-[#f59e0b] hover:text-[#0f172a]"
         >
           <MdRefresh size={20} />
@@ -92,30 +96,28 @@ export default function Dashboard() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {data.stats.map((item) => (
+        {data.stats.map((item, index) => (
           <article
             key={item.label}
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-center"
           >
-            
-              <div className="mb-3 flex items-center justify-between">
-                <span className="rounded-full text-center bg-emerald-50 px-2.5 py-1 text-sm font-semibold text-emerald-700">
-                  {item.delta}
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900">
-                {item.value} 
-              </h3>
-              <p className="mt-2 text-sm font-semibold text-slate-700">
-                {item.label}
-              </p>
-              <p className="text-sm text-slate-400">{item.hint}</p>
-           
+            <div className="mb-3 flex items-center justify-between">
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-sm font-semibold text-emerald-700">
+                {item.delta}
+              </span>
+            </div>
+
+            <h3 className="text-2xl font-bold text-slate-900">{item.value}</h3>
+            <p className="mt-2 text-sm flex items-center justify-center gap-2 font-semibold text-slate-700">
+              {item.label}{" "}
+              <span className="text-[#f59e0b]">{STAT_ICONS[index]}</span>
+            </p>
+            <p className="text-sm text-slate-400">{item.hint}</p>
           </article>
         ))}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
+      <section className="grid gap-4 xl:grid-cols-3 items-start">
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xl font-bold text-slate-900">
@@ -126,70 +128,43 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="m-0 w-full p-0" style={{ height: `${categoryChartHeight}px` }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={categoryChartData}
-                layout={isCompact ? "vertical" : "horizontal"}
-                margin={isCompact ? { top: 8, right: 8, left: 0, bottom: 6 } : { top: 8, right: 8, left: 0, bottom: 6 }}
-              >
-                {isCompact ? (
-                  <>
-                    <XAxis type="number" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="chartName"
-                      width={isMobile ? 86 : 106}
-                      tick={{ fontSize: isMobile ? 10 : 11, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
+          <div className="space-y-3">
+            {data.categories.map((item) => {
+              const width = Math.max(
+                (item.products / maxCategoryCount) * 100,
+                3,
+              );
+              return (
+                <div key={item.name}>
+                  <div className="mb-1 flex items-center justify-between text-sm">
+                    <p className="font-medium text-slate-700">{item.name}</p>
+                    <p className="font-semibold text-slate-500">
+                      {item.products}
+                    </p>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-slate-100">
+                    <div
+                      className="h-2.5 rounded-full"
+                      style={{
+                        width: `${width}%`,
+                        backgroundColor: item.color,
+                      }}
                     />
-                  </>
-                ) : (
-                  <>
-                    <XAxis
-                      dataKey="chartName"
-                      interval={0}
-                      angle={-35}
-                      textAnchor="end"
-                      height={70}
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                  </>
-                )}
-                <Tooltip />
-                <Bar dataKey="products" barSize={isMobile ? 12 : 15} radius={isCompact ? [0, 6, 6, 0] : [6, 6, 0, 0]}>
-                  {categoryChartData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </article>
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-xl font-bold text-slate-900">Price Ranges</h3>
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.priceRanges}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={48}
-                  outerRadius={82}
-                >
-                  {data.priceRanges.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+
+          <div className="my-6 flex justify-center">
+            <div
+              className=" h-44 w-44 rounded-full "
+              style={{ background: donutBackground }}
+            ></div>
           </div>
 
           <div className="space-y-2">
@@ -216,12 +191,9 @@ export default function Dashboard() {
 
       <section className="grid gap-4 xl:grid-cols-2">
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-900">
-              Top Rated Products
-            </h3>
-          </div>
-
+          <h3 className="mb-4 text-xl font-bold text-slate-900">
+            Top Rated Products
+          </h3>
           <div className="space-y-3">
             {data.topRated.map((item) => (
               <Link
@@ -237,7 +209,7 @@ export default function Dashboard() {
                   <p className="text-sm text-slate-400">{item.category}</p>
                 </div>
                 <p className="text-xl font-semibold text-[#f59e0b]">
-                  🌟 {item.rating}
+                  ★ {item.rating}
                 </p>
               </Link>
             ))}
@@ -261,14 +233,6 @@ export default function Dashboard() {
                 <span className="text-slate-300">→</span>
               </Link>
             ))}
-          </div>
-          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <p className="text-base font-semibold text-emerald-700">
-              Live updates active
-            </p>
-            <p className="text-sm text-emerald-700/80">
-              Data refreshes from API on demand
-            </p>
           </div>
         </article>
       </section>

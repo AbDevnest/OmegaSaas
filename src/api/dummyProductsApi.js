@@ -16,16 +16,17 @@ async function fetchJson(path) {
 
 export function formatCategoryLabel(category = "") {
   return category
-
-  .split()
-  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-  .join(" ") ;
+    .replace(/-/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function normalizeProduct(product) {
   return {
     ...product,
-    title: product.title ?? "Untittled Product",
+    title: product.title ?? "Untitled Product",
     brand: product.brand ?? "Generic Brand",
     images: product.images?.length
       ? product.images

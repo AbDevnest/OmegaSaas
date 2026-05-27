@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   MdGridView,
@@ -7,87 +7,70 @@ import {
   MdViewList,
 } from "react-icons/md";
 import ProductCard from "../components/ProductCard";
-import { formatCategoryLabel } from "../api/dummyProductsApi";
-import { useProductsData } from "../hooks/useProductsData";
+import AppContext from "../components/AppContext";
+import {
+  formatCategoryLabel,
+  getAllProducts,
+  getCategories,
+} from "../api/dummyProductsApi";
 
 const PAGE_SIZE = 12;
-const VALID_SORTS = new Set([
-  "featured",
-  "price_low",
-  "price_high",
-  "top_rated",
-  "big_discount",
-  "most_stock",
-  "low_stock",
-  "name_asc",
-  "name_desc",
-]);
 
-const FEATURED_OPTIONS = [
+const SORT_OPTIONS = [
   { key: "featured", label: "Featured" },
   { key: "price_low", label: "Price: Low -> High" },
   { key: "price_high", label: "Price: High -> Low" },
   { key: "top_rated", label: "Top Rated" },
-  { key: "big_discount", label: "Biggest Discount" },
-  { key: "most_stock", label: "Most in Stock" },
-  { key: "low_stock", label: "Low Stock First" },
   { key: "name_asc", label: "Name: A -> Z" },
   { key: "name_desc", label: "Name: Z -> A" },
 ];
 
-function getInitialFromParams(searchParams) {
-  const q = searchParams.get("q") || "";
-  const category = searchParams.get("category") || "all";
-  const sort = searchParams.get("sort") || "featured";
-  const view = searchParams.get("view") === "list" ? "list" : "grid";
-  const page = Number(searchParams.get("page") || 1);
-
-  return {
-    q,
-    category,
-    sort: VALID_SORTS.has(sort) ? sort : "featured",
-    view,
-    page: Number.isFinite(page) && page > 0 ? page : 1,
-  };
-}
-
 export default function Product() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialState = useMemo(() => getInitialFromParams(searchParams), []);
+  const appState = useContext(AppContext);
+  const role = appState?.role || "user";
 
-  const [searchInput, setSearchInput] = useState(initialState.q);
-  const [search, setSearch] = useState(initialState.q);
-  const [selectedCategory, setSelectedCategory] = useState(
-    initialState.category,
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [searchInput, setSearchInput] = useState(
+    () => searchParams.get("q") || "",
   );
-  const [sortBy, setSortBy] = useState(initialState.sort);
-  const [view, setView] = useState(initialState.view);
-  const [page, setPage] = useState(initialState.page);
-  const [featuredOpen, setFeaturedOpen] = useState(false);
+  const [search, setSearch] = useState(() => searchParams.get("q") || "");
+  const [sortBy, setSortBy] = useState(
+    () => searchParams.get("sort") || "featured",
+  );
+  const [view, setView] = useState(() =>
+    searchParams.get("view") === "list" ? "list" : "grid",
+  );
+  const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
+  const [selectedCategories, setSelectedCategories] = useState(() => {
+    const val = searchParams.get("category");
+    return val && val !== "all" ? val.split(",").filter(Boolean) : [];
+  });
+
+  const [sortOpen, setSortOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
 
-  const { products, categories, loading, error, refresh } = useProductsData();
-
-  const updateUrlState = useCallback(
-    (updates) => {
+  // useCallback
+  const updateUrl = useCallback(
+    (params) => {
       setSearchParams(
         (current) => {
           const next = new URLSearchParams(current);
-
-          Object.entries(updates).forEach(([key, value]) => {
-            const shouldRemove =
-              value === undefined ||
-              value === null ||
-              value === "" ||
+          Object.entries(params).forEach(([key, value]) => {
+            const remove =
+              !value ||
               (key === "category" && value === "all") ||
               (key === "sort" && value === "featured") ||
               (key === "view" && value === "grid") ||
               (key === "page" && Number(value) === 1);
-
-            if (shouldRemove) next.delete(key);
+            if (remove) next.delete(key);
             else next.set(key, String(value));
           });
-
           return next;
         },
         { replace: true },
@@ -96,29 +79,48 @@ export default function Product() {
     [setSearchParams],
   );
 
+  async function loadData(force = false) {
+    try {
+      setLoading(true);
+      setError("");
+      const [productList, categoryList] = await Promise.all([
+        getAllProducts(force),
+        getCategories(force),
+      ]);
+      setProducts(productList);
+      setCategories(categoryList);
+    } catch (err) {
+      setError(err.message || "Failed to load products");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+
+    const interval = setInterval(() => loadData(true), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchInput === search) return;
-      setSearch(searchInput);
-      setPage(1);
-      updateUrlState({ q: searchInput, page: 1 });
+      if (searchInput !== search) {
+        setSearch(searchInput);
+        setPage(1);
+        updateUrl({ q: searchInput, page: 1 });
+      }
     }, 350);
-
     return () => clearTimeout(timer);
-  }, [searchInput, search, updateUrlState]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refresh();
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [refresh]);
+  }, [searchInput, search, updateUrl]);
 
   const filteredProducts = useMemo(() => {
     const text = search.trim().toLowerCase();
 
-    const filtered = products.filter((item) => {
+    const list = products.filter((item) => {
+      if (role === "user" && !appState.isPublished(item.id)) return false;
+
       const matchesSearch =
         !text ||
         item.title.toLowerCase().includes(text) ||
@@ -126,83 +128,69 @@ export default function Product() {
         item.brand.toLowerCase().includes(text);
 
       const matchesCategory =
-        selectedCategory === "all" || item.category === selectedCategory;
-      const matchesLowStock = sortBy !== "low_stock" || item.stock < 20;
+        selectedCategories.length === 0 ||
+        selectedCategories.includes(item.category);
 
-      return matchesSearch && matchesCategory && matchesLowStock;
+      return matchesSearch && matchesCategory;
     });
 
-    return [...filtered].sort((a, b) => {
+    return list.sort((a, b) => {
       if (sortBy === "price_low") return a.price - b.price;
       if (sortBy === "price_high") return b.price - a.price;
       if (sortBy === "top_rated") return b.rating - a.rating;
-      if (sortBy === "big_discount")
-        return b.discountPercentage - a.discountPercentage;
-      if (sortBy === "most_stock") return b.stock - a.stock;
-      if (sortBy === "low_stock") return a.stock - b.stock;
-      if (sortBy === "name_desc") return b.title.localeCompare(a.title);
       if (sortBy === "name_asc") return a.title.localeCompare(b.title);
+      if (sortBy === "name_desc") return b.title.localeCompare(a.title);
       return a.id - b.id;
     });
-  }, [products, search, selectedCategory, sortBy]);
+  }, [products, search, selectedCategories, sortBy, role, appState]);
 
   const totalPages = Math.max(
     1,
     Math.ceil(filteredProducts.length / PAGE_SIZE),
   );
   const currentPage = Math.min(page, totalPages);
-
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
-      updateUrlState({ page: totalPages });
-    }
-  }, [page, totalPages, updateUrlState]);
-
-  const visibleProducts = useMemo(
-    () =>
-      filteredProducts.slice(
-        (currentPage - 1) * PAGE_SIZE,
-        currentPage * PAGE_SIZE,
-      ),
-    [filteredProducts, currentPage],
+  const visibleProducts = filteredProducts.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
   );
 
-  const selectCategory = useCallback(
-    (category) => {
-      setSelectedCategory(category);
-      setPage(1);
-      updateUrlState({ category, page: 1 });
-    },
-    [updateUrlState],
-  );
+  function toggleCategory(category) {
+    const next = selectedCategories.includes(category)
+      ? selectedCategories.filter((c) => c !== category)
+      : [...selectedCategories, category];
+    setSelectedCategories(next);
+    setPage(1);
+    updateUrl({ category: next.length ? next.join(",") : "all", page: 1 });
+  }
 
-  const handleSortChange = useCallback(
-    (nextSort) => {
-      setSortBy(nextSort);
-      setFeaturedOpen(false);
-      setPage(1);
-      updateUrlState({ sort: nextSort, page: 1 });
-    },
-    [updateUrlState],
-  );
+  function clearCategories() {
+    setSelectedCategories([]);
+    setPage(1);
+    updateUrl({ category: "all", page: 1 });
+  }
 
-  const handleViewChange = useCallback(
-    (nextView) => {
-      setView(nextView);
-      updateUrlState({ view: nextView });
-    },
-    [updateUrlState],
-  );
+  function changeSort(val) {
+    setSortBy(val);
+    setSortOpen(false);
+    setPage(1);
+    updateUrl({ sort: val, page: 1 });
+  }
 
-  const handlePageChange = useCallback(
-    (nextPage) => {
-      if (nextPage < 1 || nextPage > totalPages) return;
-      setPage(nextPage);
-      updateUrlState({ page: nextPage });
-    },
-    [totalPages, updateUrlState],
-  );
+  function changeView(val) {
+    setView(val);
+    updateUrl({ view: val });
+  }
+
+  function changePage(next) {
+    if (next < 1 || next > totalPages) return;
+    setPage(next);
+    updateUrl({ page: next });
+  }
+
+  function togglePublish(productId) {
+    if (role !== "admin") return;
+    appState.togglePublished(productId);
+  }
 
   if (loading) {
     return (
@@ -236,26 +224,25 @@ export default function Product() {
 
           <div className="relative">
             <button
-              onClick={() => setFeaturedOpen((prev) => !prev)}
+              onClick={() => setSortOpen((prev) => !prev)}
               className="flex w-full min-w-[220px] items-center justify-between rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
             >
               <span>
-                ✨{" "}
-                {FEATURED_OPTIONS.find((item) => item.key === sortBy)?.label ||
+                {SORT_OPTIONS.find((s) => s.key === sortBy)?.label ||
                   "Featured"}
               </span>
               <span className="text-slate-400">▾</span>
             </button>
 
-            {featuredOpen ? (
+            {sortOpen && (
               <div className="absolute z-20 mt-2 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
                 <p className="px-2 pb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
-                  Sort & Filter
+                  Sort
                 </p>
-                {FEATURED_OPTIONS.map((item) => (
+                {SORT_OPTIONS.map((item) => (
                   <button
                     key={item.key}
-                    onClick={() => handleSortChange(item.key)}
+                    onClick={() => changeSort(item.key)}
                     className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ${
                       sortBy === item.key
                         ? "bg-amber-50 text-amber-700"
@@ -263,48 +250,38 @@ export default function Product() {
                     }`}
                   >
                     <span>{item.label}</span>
-                    {sortBy === item.key ? <span>✓</span> : null}
+                    {sortBy === item.key && <span>✓</span>}
                   </button>
                 ))}
               </div>
-            ) : null}
+            )}
           </div>
 
           <div className="flex gap-3">
-            <div className="relative">
-              <button
-                onClick={() => setCategoryOpen((prev) => !prev)}
-                className={`flex min-w-[140px] items-center justify-between rounded-xl border px-4 py-2 text-sm font-semibold ${
-                  categoryOpen
-                    ? "border-[#f59e0b] bg-[#f59e0b] text-[#0f172a]"
-                    : "border-slate-200 text-slate-700"
-                }`}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <MdOutlineTune size={16} /> Category
-                </span>
-                <span className="text-slate-400">▾</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setCategoryOpen((prev) => !prev)}
+              className={`flex min-w-[160px] items-center justify-between rounded-xl border px-4 py-2 text-sm font-semibold ${
+                categoryOpen
+                  ? "border-[#f59e0b] bg-[#f59e0b] text-[#0f172a]"
+                  : "border-slate-200 text-slate-700"
+              }`}
+            >
+              <span className="inline-flex items-center gap-1">
+                <MdOutlineTune size={16} /> Categories
+              </span>
+              <span className="text-slate-400">▾</span>
+            </button>
 
-            <div className="flex items-center overflow-auto rounded-xl border border-slate-200 p-1">
+            <div className="flex items-center rounded-xl border border-slate-200 p-1">
               <button
-                onClick={() => handleViewChange("grid")}
-                className={`rounded-lg px-2 py-1.5 ${
-                  view === "grid"
-                    ? "bg-[#f59e0b] text-[#0f172a]"
-                    : "text-slate-400"
-                }`}
+                onClick={() => changeView("grid")}
+                className={`rounded-lg px-2 py-1.5 ${view === "grid" ? "bg-[#f59e0b] text-[#0f172a]" : "text-slate-400"}`}
               >
                 <MdGridView size={18} />
               </button>
               <button
-                onClick={() => handleViewChange("list")}
-                className={`rounded-lg px-2 py-1.5 ${
-                  view === "list"
-                    ? "bg-[#f59e0b] text-[#0f172a]"
-                    : "text-slate-400"
-                }`}
+                onClick={() => changeView("list")}
+                className={`rounded-lg px-2 py-1.5 ${view === "list" ? "bg-[#f59e0b] text-[#0f172a]" : "text-slate-400"}`}
               >
                 <MdViewList size={18} />
               </button>
@@ -312,28 +289,26 @@ export default function Product() {
           </div>
         </div>
 
-        {categoryOpen ? (
+        {categoryOpen && (
           <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
-            <p className="mb-2 text-sm font-semibold text-slate-600">
-              Category:
-            </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-600">
+                Categories:
+              </p>
               <button
-                onClick={() => selectCategory("all")}
-                className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                  selectedCategory === "all"
-                    ? "border-[#f59e0b] bg-[#f59e0b] text-[#0f172a]"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
+                onClick={clearCategories}
+                className="text-xs font-semibold text-rose-500"
               >
-                All
+                Clear all
               </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
               {categories.map((category) => {
-                const active = selectedCategory === category;
+                const active = selectedCategories.includes(category);
                 return (
                   <button
                     key={category}
-                    onClick={() => selectCategory(category)}
+                    onClick={() => toggleCategory(category)}
                     className={`rounded-full border px-3 py-1 text-xs font-medium ${
                       active
                         ? "border-[#f59e0b] bg-[#f59e0b] text-[#0f172a]"
@@ -346,7 +321,7 @@ export default function Product() {
               })}
             </div>
           </div>
-        ) : null}
+        )}
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
@@ -361,17 +336,28 @@ export default function Product() {
           </span>{" "}
           products
         </p>
+        {role === "admin" && (
+          <p className="font-semibold text-slate-700">
+            Admin view: full product list + publish control
+          </p>
+        )}
       </div>
 
       {view === "grid" ? (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {visibleProducts.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              role={role}
+              published={appState.isPublished(product.id)}
+              onTogglePublished={togglePublish}
+            />
           ))}
         </section>
       ) : (
         <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid min-w-[980px] grid-cols-[100px_1.6fr_1fr_1fr_1fr_1fr_0.7fr] border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold uppercase text-center tracking-wide text-slate-500">
+          <div className="grid min-w-[980px] grid-cols-[100px_1.6fr_1fr_1fr_1fr_1fr_0.9fr] border-b border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs font-bold uppercase tracking-wide text-slate-500">
             <p>Image</p>
             <p>Product</p>
             <p>Category</p>
@@ -380,32 +366,36 @@ export default function Product() {
             <p>Rating</p>
             <p>Action</p>
           </div>
+
           {visibleProducts.map((product) => (
             <div
               key={product.id}
-              className="grid min-w-[980px] grid-cols-[100px_1.6fr_1fr_1fr_1fr_1fr_0.7fr] items-center gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"
+              className="grid min-w-[980px] grid-cols-[100px_1.6fr_1fr_1fr_1fr_1fr_0.9fr] items-center gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"
             >
-
-                
-              <div className="h-14 w-14 mx-auto overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+              <div className="mx-auto h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                 <img
                   src={product.thumbnail || product.images?.[0]}
                   alt={product.title}
-                  className="h-full w-full object-cover "
+                  className="h-full w-full object-cover"
                 />
               </div>
+
               <div className="mx-auto text-center">
                 <p className="text-sm font-semibold text-slate-800">
                   {product.title}
                 </p>
                 <p className="text-xs text-slate-400">{product.brand}</p>
               </div>
-              <p className="text-sm mx-auto text-slate-500">{product.categoryLabel}</p>
-              <p className="text-base mx-auto font-bold text-slate-800">
+
+              <p className="mx-auto text-sm text-slate-500">
+                {product.categoryLabel}
+              </p>
+              <p className="mx-auto text-base font-bold text-slate-800">
                 ${product.price.toFixed(2)}
               </p>
+
               <span
-                className={`mx-auto inline flex rounded-full px-3 py-1 text-xs font-semibold ${
+                className={`mx-auto inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
                   product.stock > 20
                     ? "bg-emerald-100 text-emerald-700"
                     : "bg-amber-100 text-amber-700"
@@ -415,17 +405,38 @@ export default function Product() {
                   ? `In Stock (${product.stock})`
                   : `Low Stock (${product.stock})`}
               </span>
+
               <p className="mx-auto text-base font-semibold text-[#f59e0b]">
-                🌟 {product.rating}
+                ★ {product.rating}
               </p>
-              <Link
-                to={`/products/${product.id}`}
-                className="mx-auto flex items-center gap-1 text-sm font-semibold text-[#f59e0b]"
-              >
-                
-                👁️‍🗨️
-                View
-              </Link>
+
+              {role === "admin" ? (
+                <div className="mx-auto flex flex-col items-center gap-1.5">
+                  <Link
+                    to={`/products/${product.id}`}
+                    className="text-xs font-semibold text-[#f59e0b]"
+                  >
+                    View
+                  </Link>
+                  <button
+                    onClick={() => togglePublish(product.id)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                      appState.isPublished(product.id)
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {appState.isPublished(product.id) ? "Published" : "Hidden"}
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  to={`/products/${product.id}`}
+                  className="mx-auto text-sm font-semibold text-[#f59e0b]"
+                >
+                  View
+                </Link>
+              )}
             </div>
           ))}
         </section>
@@ -433,7 +444,7 @@ export default function Product() {
 
       <div className="flex items-center justify-center gap-2">
         <button
-          onClick={() => handlePageChange(currentPage - 1)}
+          onClick={() => changePage(currentPage - 1)}
           disabled={currentPage === 1}
           className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 disabled:opacity-40"
         >
@@ -444,7 +455,7 @@ export default function Product() {
           {totalPages}
         </p>
         <button
-          onClick={() => handlePageChange(currentPage + 1)}
+          onClick={() => changePage(currentPage + 1)}
           disabled={currentPage === totalPages}
           className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 disabled:opacity-40"
         >

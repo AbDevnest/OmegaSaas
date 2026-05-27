@@ -1,34 +1,32 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useRef } from "react";
 
-import {
-  MdDashboard,
-  MdInventory,
-  MdAnalytics,
-  MdClose,
-} from "react-icons/md";
+import { MdDashboard, MdInventory, MdAnalytics, MdClose } from "react-icons/md";
 
 const navItems = [
   {
-    path: "/",
+    path: "/dashboard",
     label: "Dashboard",
     icon: <MdDashboard size={22} />,
+    roles: ["admin"],
   },
 
   {
     path: "/products",
     label: "Products",
     icon: <MdInventory size={22} />,
+    roles: ["admin", "user"],
   },
 
   {
     path: "/analytics",
     label: "Analytics",
     icon: <MdAnalytics size={22} />,
+    roles: ["admin"],
   },
 ];
 
-export default function Sidebar({ open, onClose }) {
+export default function Sidebar({ open, onClose, role }) {
   const sidebarRef = useRef(null);
 
   useEffect(() => {
@@ -47,7 +45,6 @@ export default function Sidebar({ open, onClose }) {
 
   return (
     <>
-      {/* Overlay */}
       {open && (
         <div
           onClick={onClose}
@@ -69,7 +66,7 @@ export default function Sidebar({ open, onClose }) {
           border-r border-[#37311d]
           h-screen
           lg:w-64
-          md:w-54
+          md:w-56
           p-5
           flex
           flex-col
@@ -80,43 +77,31 @@ export default function Sidebar({ open, onClose }) {
 
           fixed top-0 left-0
 
-          ${
-            open
-              ? "translate-x-0"
-              : "-translate-x-full"
-          }
+          ${open ? "translate-x-0" : "-translate-x-full"}
 
           md:translate-x-0
         `}
-
         ref={sidebarRef}
       >
-
         <div>
           <div className="flex items-center justify-between mb-10">
+            <h1 className="text-2xl font-bold text-white">Omega SaaS</h1>
 
-            <h1 className="text-2xl font-bold text-white">
-              Omega SaaS
-            </h1>
-
-            <button
-              onClick={onClose}
-              className="md:hidden text-gray-300"
-            >
+            <button onClick={onClose} className="md:hidden text-gray-300">
               <MdClose size={24} />
             </button>
-
           </div>
 
           <nav className="flex flex-col gap-3">
-
-            {navItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={onClose}
-                className={({ isActive }) =>
-                  `
+            {navItems
+              .filter((item) => item.roles.includes(role))
+              .map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    `
                   flex
                   items-center
                   gap-3
@@ -131,20 +116,14 @@ export default function Sidebar({ open, onClose }) {
                       : "text-gray-300 hover:bg-[#37311d] hover:text-white"
                   }
                   `
-                }
-              >
+                  }
+                >
+                  {item.icon}
 
-                {item.icon}
-
-                <span className="text-sm font-medium">
-                  {item.label}
-                </span>
-
-              </NavLink>
-            ))}
-
+                  <span className="text-sm font-medium">{item.label}</span>
+                </NavLink>
+              ))}
           </nav>
-
         </div>
 
         <div
@@ -158,7 +137,6 @@ export default function Sidebar({ open, onClose }) {
             gap-3
           "
         >
-
           <div
             className="
               w-10
@@ -172,21 +150,19 @@ export default function Sidebar({ open, onClose }) {
               font-bold
             "
           >
-            A
+            {role === "admin" ? "A" : "U"}
           </div>
 
           <div>
             <h3 className="text-sm font-semibold text-white">
-              Admin
+              {role === "admin" ? "Admin" : "User"}
             </h3>
 
             <p className="text-xs text-gray-400">
-              admin@omega.com
+              {role === "admin" ? "admin@omega.com" : "user@omega.com"}
             </p>
           </div>
-
         </div>
-
       </aside>
     </>
   );

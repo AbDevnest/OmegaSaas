@@ -1,93 +1,67 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useState } from "react";
 import { MdRefresh } from "react-icons/md";
-import { useProductsData } from "../hooks/useProductsData";
+import { FiPackage } from "react-icons/fi";
+import { BiCategory } from "react-icons/bi";
+import { FaStar } from "react-icons/fa";
+import { MdInventory2 } from "react-icons/md";
+import { getAllProducts } from "../api/dummyProductsApi";
 import { buildAnalyticsData } from "../utils/metrics";
 
+function getDonutGradient(items) {
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return "conic-gradient(#e2e8f0 0deg 360deg)";
+
+  let current = 0;
+  const parts = items.map((item) => {
+    const angle = (item.value / total) * 360;
+    const start = current;
+    const end = current + angle;
+    current = end;
+    return `${item.color} ${start}deg ${end}deg`;
+  });
+
+  return `conic-gradient(${parts.join(",")})`;
+}
+
+function truncateText(text, max = 12) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}...`;
+}
+
 export default function Analytics() {
-  const { products, loading, error, refresh } = useProductsData();
-  const data = useMemo(() => buildAnalyticsData(products), [products]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const getViewportMode = () => {
-    if (typeof window === "undefined") return "desktop";
-    if (window.innerWidth < 640) return "mobile";
-    if (window.innerWidth < 1024) return "tablet";
-    return "desktop";
-  };
-
-  const [viewportMode, setViewportMode] = useState(getViewportMode);
+  async function loadData(force = false) {
+    try {
+      setLoading(true);
+      setError("");
+      const list = await getAllProducts(force);
+      setProducts(list);
+    } catch (err) {
+      setError(err.message || "Failed to load analytics data");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const handleResize = () => setViewportMode(getViewportMode());
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    loadData();
   }, []);
 
-  const isMobile = viewportMode === "mobile";
-  const isTablet = viewportMode === "tablet";
-  const isCompact = isMobile || isTablet;
-
-  const categoryNameLimit = isMobile ? 9 : isTablet ? 11 : 14;
-
-  const categoryChartData = useMemo(() => {
-    const sorted = [...data.categories].sort((a, b) => b.products - a.products);
-    return sorted.map((item) => ({
-      ...item,
-      chartName:
-        item.name.length > categoryNameLimit
-          ? `${item.name.slice(0, categoryNameLimit)}...`
-          : item.name,
-    }));
-  }, [data.categories, categoryNameLimit]);
-
-  const avgRatingChartData = useMemo(() => {
-    const sorted = [...data.categories].sort((a, b) => b.rating - a.rating);
-    return sorted.map((item) => ({
-      ...item,
-      chartName:
-        item.name.length > categoryNameLimit
-          ? `${item.name.slice(0, categoryNameLimit)}...`
-          : item.name,
-    }));
-  }, [data.categories, categoryNameLimit]);
-
-  const topValueChartData = useMemo(() => {
-    const topValueCategories = [...data.categories].sort(
-      (a, b) => b.value - a.value,
-    );
-    return topValueCategories
-      .slice()
-      .reverse()
-      .map((item) => ({
-        name:
-          item.name.length > categoryNameLimit
-            ? `${item.name.slice(0, categoryNameLimit)}...`
-            : item.name,
-        value: Math.round(item.value),
-        fill: item.color,
-      }));
-  }, [data.categories, categoryNameLimit]);
-
-  const productsPerCategoryHeight = isCompact
-    ? Math.max(360, categoryChartData.length * (isMobile ? 28 : 24))
-    : 340;
-  const inventoryValueHeight = isCompact
-    ? Math.max(360, topValueChartData.length * (isMobile ? 28 : 24))
-    : 320;
-  const avgRatingHeight = isCompact
-    ? Math.max(360, avgRatingChartData.length * (isMobile ? 28 : 24))
-    : 320;
+  const data = buildAnalyticsData(products);
+  const maxProducts = Math.max(
+    ...data.categories.map((item) => item.products),
+    1,
+  );
+  const maxRating = Math.max(...data.categories.map((item) => item.rating), 1);
+  const maxValue = Math.max(...data.categories.map((item) => item.value), 1);
+  const maxRatingCount = Math.max(
+    ...data.ratingDistribution.map((item) => item.value),
+    1,
+  );
+  const stockDonutBackground = getDonutGradient(data.stockHealth);
 
   if (loading) {
     return (
@@ -105,18 +79,18 @@ export default function Analytics() {
     );
   }
 
+  const STAT_ICONS = [
+    <FiPackage size={18} />,
+    <FaStar size={18} />,
+    <MdInventory2 size={18} />,
+    <BiCategory size={18} />,
+  ];
+
   return (
     <div className="space-y-6">
-      <section className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Analytics</h2>
-          <p className="text-lg text-slate-400">
-            Product performance & inventory insights
-          </p>
-        </div>
-
+      <section className="text-end ">
         <button
-          onClick={refresh}
+          onClick={() => loadData(true)}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-[#f59e0b] hover:text-[#0f172a]"
         >
           <MdRefresh size={20} />
@@ -125,10 +99,10 @@ export default function Analytics() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {data.stats.map((item) => (
+        {data.stats.map((item, index) => (
           <article
             key={item.label}
-            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-center"
           >
             <div className="mb-3 flex items-center justify-between">
               <span
@@ -141,107 +115,59 @@ export default function Analytics() {
                 {item.delta}
               </span>
             </div>
-            <h3 className="text-4xl font-bold text-slate-900">{item.value}</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-700">
-              {item.label}
+            <h3 className="text-3xl font-bold text-slate-900">{item.value}</h3>
+            <p className="mt-2 text-sm flex items-center justify-center gap-2 font-semibold text-slate-700">
+              {item.label}{" "}
+              <span className="text-[#f59e0b]">{STAT_ICONS[index]}</span>
             </p>
             <p className="text-sm text-slate-400">{item.hint}</p>
           </article>
         ))}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+      <section className="grid gap-4 xl:grid-cols-3 items-start">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
           <h3 className="text-xl font-bold text-slate-900">
             Products per Category
           </h3>
-          <p className="mb-2 text-base text-slate-400">
+          <p className="mb-3 text-base text-slate-400">
             All {data.categories.length} categories
           </p>
-          <div style={{ height: `${productsPerCategoryHeight}px` }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={categoryChartData}
-                layout={isCompact ? "vertical" : "horizontal"}
-                margin={
-                  isCompact
-                    ? { top: 6, right: 8, left: 0, bottom: 6 }
-                    : { top: 6, right: 8, left: 0, bottom: 6 }
-                }
-              >
-                {isCompact ? (
-                  <>
-                    <XAxis
-                      type="number"
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="chartName"
-                      width={isMobile ? 78 : 96}
-                      tick={{ fontSize: isMobile ? 10 : 11, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <XAxis
-                      dataKey="chartName"
-                      interval={0}
-                      angle={-35}
-                      textAnchor="end"
-                      height={70}
-                      tick={{ fontSize: 11, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                  </>
-                )}
-                <Tooltip />
-                <Bar
-                  dataKey="products"
-                  barSize={isMobile ? 12 : 16}
-                  radius={isCompact ? [0, 6, 6, 0] : [6, 6, 0, 0]}
-                >
-                  {categoryChartData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div className="space-y-3">
+            {data.categories.map((item) => (
+              <div key={item.name}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <p className="font-medium text-slate-700">{item.name}</p>
+                  <p className="font-semibold text-slate-500">
+                    {item.products}
+                  </p>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-100">
+                  <div
+                    className="h-2.5 rounded-full"
+                    style={{
+                      width: `${Math.max((item.products / maxProducts) * 100, 3)}%`,
+                      backgroundColor: item.color,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </article>
 
-        <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-xl font-bold text-slate-900">Stock Health</h3>
           <p className="mb-2 text-base text-slate-400">
             Inventory status breakdown
           </p>
-          <div className="h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.stockHealth}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={50}
-                  outerRadius={82}
-                >
-                  {data.stockHealth.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+
+          <div className="my-6 flex justify-center">
+            <div
+              className="relative h-44 w-44 rounded-full"
+              style={{ background: stockDonutBackground }}
+            ></div>
           </div>
 
           <div className="space-y-2">
@@ -266,81 +192,71 @@ export default function Analytics() {
         </article>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="grid gap-4 xl:grid-cols-2 items-start">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 min-h-84  shadow-sm">
           <h3 className="text-xl font-bold text-slate-900">
             Rating Distribution
           </h3>
           <p className="mb-3 text-base text-slate-400">
             How products are rated by customers
           </p>
-          <div className={isMobile ? "h-[260px]" : "h-[320px]"}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.ratingDistribution}>
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: isMobile ? 10 : 12, fill: "#64748b" }}
-                />
-                <YAxis
-                  tick={{ fontSize: isMobile ? 10 : 12, fill: "#64748b" }}
-                />
-                <Tooltip />
-                <Bar
-                  dataKey="value"
-                  fill="#f59e0b"
-                  barSize={isMobile ? 20 : 28}
-                  radius={[8, 8, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div className="space-y-3">
+            {data.ratingDistribution.map((item) => (
+              <div key={item.name}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <p className="font-medium text-slate-700">{item.name}</p>
+                  <p className="font-semibold text-slate-500">{item.value}</p>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-100">
+                  <div
+                    className="h-2.5 rounded-full bg-[#f59e0b]"
+                    style={{
+                      width: `${Math.max((item.value / maxRatingCount) * 100, 3)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </article>
 
-        <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-xl font-bold text-slate-900">Category Summary</h3>
-          <p className="mb-3 text-base text-slate-400">
-            Detailed breakdown per category
-          </p>
-          <div className="max-h-[320px] overflow-y-auto rounded-xl border border-slate-100">
-            <table
-              className="w-full border-collapse text-left"
-              style={{ tableLayout: "fixed" }}
-            >
-              <colgroup>
-                <col style={{ width: "32%" }} />
-                <col style={{ width: "22%" }} />
-                <col style={{ width: "20%" }} />
-                <col style={{ width: "26%" }} />
-              </colgroup>
-              <thead className="sticky top-0 bg-slate-50 z-10">
+        <article className="rounded-2xl border overflow-y-auto overflow-x-hidden max-h-84 border-slate-200 bg-white  shadow-sm">
+          <div className="sticky top-0 bg-white px-5 pt-3">
+            <h3 className="text-xl font-bold text-slate-900">
+              Category Summary
+            </h3>
+            <p className="mb-3 text-base text-slate-400">
+              Detailed breakdown per category
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-100">
+            <table className="w-full border-collapse text-left p-5">
+              <thead className="sticky top-16 rounded-t-lg bg-slate-50 sm:text-sm text-xs text-center text-slate-400">
                 <tr>
-                  <th className="px-1.5 py-2 text-[11px] text-slate-400 font-medium">
-                    Category
-                  </th>
-                  <th className="px-1.5 py-2 text-[11px] text-slate-400 font-medium">
-                    Products
-                  </th>
-                  <th className="px-1.5 py-2 text-[11px] text-slate-400 font-medium">
-                    Rating
-                  </th>
-                  <th className="px-1.5 py-2 text-[11px] text-slate-400 font-medium">
-                    Value
-                  </th>
+                  <th className="py-2">Category</th>
+                  <th className="py-2">Products</th>
+                  <th className="py-2">Rating</th>
+                  <th className="py-2">Value</th>
                 </tr>
               </thead>
               <tbody>
                 {data.categories.map((item) => (
-                  <tr key={item.name} className="border-t border-slate-100">
-                    <td className="px-1.5 py-2 text-[11px] font-medium text-slate-700 truncate">
+                  <tr
+                    key={item.name}
+                    className="border-t border-slate-100 sm:text-sm text-xs text-center"
+                  >
+                    <td className="px-3 py-2 font-medium text-slate-700">
                       {item.name}
                     </td>
-                    <td className="px-1.5 py-2 text-[11px] text-slate-600">
+                    <td className="px-3 py-2 text-slate-600">
                       {item.products}
                     </td>
-                    <td className="px-1.5 py-2 text-[11px] text-[#f59e0b]">
-                      ⭐ {item.rating}
+                    <td className="px-3 py-2 text-[#f59e0b]">
+                      ★ {item.rating}
                     </td>
-                    <td className="px-1.5 py-2 text-[11px] font-semibold text-slate-800">
+                    <td className="px-3 py-2 font-semibold text-slate-800">
                       $
                       {item.value.toLocaleString(undefined, {
                         maximumFractionDigits: 0,
@@ -355,116 +271,66 @@ export default function Analytics() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-xl font-bold text-slate-900">
             Inventory Value by Category
           </h3>
           <p className="mb-3 text-base text-slate-400">
             All categories by total stock value
           </p>
-          <div style={{ height: `${inventoryValueHeight}px` }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={topValueChartData}
-                layout="vertical"
-                margin={
-                  isMobile
-                    ? { top: 8, right: 6, left: 0, bottom: 8 }
-                    : { top: 8, right: 16, left: 8, bottom: 8 }
-                }
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  width={isMobile ? 78 : 120}
-                  tick={{ fontSize: isMobile ? 10 : 11, fill: "#475569" }}
-                />
-                <Tooltip
-                  formatter={(value) =>
-                    `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                  }
-                />
-                <Bar
-                  dataKey="value"
-                  barSize={isMobile ? 12 : 18}
-                  radius={[0, 8, 8, 0]}
-                >
-                  {topValueChartData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div className="space-y-3">
+            {data.categories.map((item) => (
+              <div key={item.name}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <p className="font-medium text-slate-700">
+                    {truncateText(item.name, 24)}
+                  </p>
+                  <p className="font-semibold text-slate-500">
+                    ${Math.round(item.value).toLocaleString()}
+                  </p>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-100">
+                  <div
+                    className="h-2.5 rounded-full"
+                    style={{
+                      width: `${Math.max((item.value / maxValue) * 100, 2)}%`,
+                      backgroundColor: item.color,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </article>
 
-        <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-xl font-bold text-slate-900">
             Avg Rating by Category
           </h3>
           <p className="mb-3 text-base text-slate-400">
             Quality score per category
           </p>
-          <div style={{ height: `${avgRatingHeight}px` }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={avgRatingChartData}
-                layout={isCompact ? "vertical" : "horizontal"}
-                margin={
-                  isCompact
-                    ? { top: 6, right: 8, left: 0, bottom: 6 }
-                    : { top: 6, right: 8, left: 0, bottom: 6 }
-                }
-              >
-                {isCompact ? (
-                  <>
-                    <XAxis
-                      type="number"
-                      domain={[0, 5]}
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="chartName"
-                      width={isMobile ? 78 : 96}
-                      tick={{ fontSize: isMobile ? 10 : 11, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <XAxis
-                      dataKey="chartName"
-                      interval={0}
-                      angle={-35}
-                      textAnchor="end"
-                      height={70}
-                      tick={{ fontSize: 11, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      domain={[0, 5]}
-                      tick={{ fontSize: 12, fill: "#64748b" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                  </>
-                )}
-                <Tooltip />
-                <Bar
-                  dataKey="rating"
-                  fill="#7c5ce0"
-                  barSize={isMobile ? 12 : 16}
-                  radius={isCompact ? [0, 6, 6, 0] : [6, 6, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div className="space-y-3">
+            {data.categories.map((item) => (
+              <div key={item.name}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <p className="font-medium text-slate-700">
+                    {truncateText(item.name, 24)}
+                  </p>
+                  <p className="font-semibold text-slate-500">{item.rating}</p>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-100">
+                  <div
+                    className="h-2.5 rounded-full bg-[#7c5ce0]"
+                    style={{
+                      width: `${Math.max((item.rating / maxRating) * 100, 3)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </article>
       </section>
